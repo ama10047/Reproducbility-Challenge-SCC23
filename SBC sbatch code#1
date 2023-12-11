@@ -1,0 +1,68 @@
+#!/bin/bash
+export STARPU_MPI_STATS=1
+
+# Define an array of matrix sizes
+matrix_sizes=(5004 10008 15012 20016 25020 30024 35028 40032 45036 50040)
+
+# Loop over each matrix size
+for size in "${matrix_sizes[@]}"; do
+    echo "Running with matrix size: $size"
+
+    # Create an SBATCH script for the current matrix size
+    sbatch_script="sbatch_${size}.sh"
+
+    # Write the SBATCH script content
+    cat <<EOT >> "$sbatch_script"
+#!/bin/bash
+#SBATCH --nodes=15
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=100GB
+#SBATCH --time=00:30:00
+#SBATCH --job-name=chameleon_${size}
+
+# Define the path to sbc.py
+sbc_script="/scratch/ama10047/sbc.py"
+
+# Generate the sbc.txt file
+sbc_file="/scratch/ama10047/sbc_${size}.txt"
+/usr/bin/python3 "\$sbc_script" -r "6" -n "$size" -o "\$sbc_file" --extended
+
+# Define the output file name
+log_file="test_$size.log"
+data_file="data_$size.txt"
+
+# Get the content of the sbc_${size}.txt file
+sbc_content=\$(<"\$sbc_file")
+
+# Create a temporary file and write the sbc content to it
+tmp_sbc_file="/scratch/ama10047/tmp_sbc_$size.txt"
+echo "\$sbc_content" > "\$tmp_sbc_file"
+-o potrf -n "$size" -b 500 -P 16 --nowarmup --mtxfmt=1 2>&1 | tee "$log_file"
+# Execute the command with the current matrix size and the temporary sbc file
+chameleon_command="chameleon_dtesting -o potrf -n $size -b 500 -f \$tmp_sbc_file --nowarmup --mtxfmt=1"
+echo "Executing Chameleon command: \$chameleon_command"
+srun \$chameleon_command 2>&1 | tee "\$log_file"
+
+# Clean up the temporary sbc file
+rm "\$tmp_sbc_file"
+
+# Process the log file to calculate the total communication
+temp=\$(egrep 'starpu_comm_stats_memnode' "\$log_file" | awk '{s+=\$5} END {print s/1024.0}')
+total="Data for matrix size: $size \ncommunication: \$temp"
+
+# Output the total to both the terminal and a separate file
+echo -e "\$total" | tee "data_$size.txt"
+
+# Process the log file for the gflops and time
+awk -F';' '/Id;Function;threads;gpus;P;Q;mtxfmt;nb;uplo;n;lda;seedA;tsub;time;gflops/{getline; printf "time: %s \ngflops: %s\n", \$14, \$15}' "\$log_file" | tee -a "\$data_file"
+
+echo "Completed for matrix size: $size"
+EOT
+
+    # Submit the SBATCH script to the queue
+    sbatch "$sbatch_script"
+
+    echo "Submitted job for matrix size: $size"
+done
+
