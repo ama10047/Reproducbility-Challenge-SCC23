@@ -1,0 +1,2 @@
+Data for matrix size: 20016
+communication: 0

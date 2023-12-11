@@ -1,0 +1,4 @@
+Data for matrix size: 25000 
+communication:  25.4903
+time: 1.378679e+00 
+gflops: 3.777996e+03
