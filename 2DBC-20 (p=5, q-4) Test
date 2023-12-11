@@ -1,0 +1,22 @@
+#!/bin/bash
+export STARPU_MPI_STATS=1
+# Define an array of matrix sizes
+matrix_sizes=(5000 10000 15000 20000 25000 30000 35000 40000 45000 50000)
+# Loop over each matrix size
+for size in "${matrix_sizes[@]}"; do
+    echo "Running with matrix size: $size"
+    # Define the output file name
+    log_file="test_$size.log"
+    data_file="data_$size.txt"
+    # Execute the command with the current matrix size
+    srun --nodes=20 --tasks-per-node=1 --cpus-per-task=12 --mem=100GB chameleon_dtesting -o potrf -n "$size" -b 500 -P 20 --nowarmup --mtxfmt=1 2>&1 | tee "$log_file"
+    # Process the log file to calculate the total communication
+    temp=$(egrep 'starpu_comm_stats_memnode' "$log_file" | awk '{s+=$5} END {print s/1024.0}')
+    total="Data for matrix size: $size \ncommunication:  $temp"
+    # Output the total to both the terminal and a separate file
+    echo -e "$total" | tee "data_$size.txt"
+    # Process the log file for the gflops and time
+    awk -F';' '/Id;Function;threads;gpus;P;Q;mtxfmt;nb;uplo;n;lda;seedA;tsub;time;gflops/{getline; printf "time: %s \ngflops: %s\n", $14, $15}' "$log_file" \
+| tee -a "$data_file"
+    echo "Completed for matrix size: $size"
+done
