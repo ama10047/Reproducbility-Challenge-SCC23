@@ -1,5 +1,3 @@
-     Show Dotfiles Show Owner/Mode
-/scratch/ama10047/
 #!/bin/bash
 
 export STARPU_MPI_STATS=1
