@@ -1,0 +1,40 @@
+     Show Dotfiles Show Owner/Mode
+/scratch/ama10047/
+#!/bin/bash
+
+export STARPU_MPI_STATS=1
+
+# Define matrix sizes and other parameters
+matrix_sizes=(3000 5004 10008 15012 20016 25020 30024 35028 40032 45036)
+num_procs=15
+tile_size=500
+r=6
+
+# Loop over each matrix size
+for size in "${matrix_sizes[@]}"; do
+    echo "Running with matrix size: $size"
+
+    # Generate the sbc.txt file
+    sbc_file="sbc_$size.txt"
+    echo "python3 /scratch/ama10047/sbc.py -r $r -n $size -o $sbc_file --extended"
+    python3 /scratch/ama10047/sbc.py -r "$r" -n "$size" -o "$sbc_file" --extended
+
+    # Define the output file names
+    log_file="test_$size.log"
+    data_file="data_$size.txt"
+
+    # Execute the command with the current matrix size
+    srun --nodes=15 --tasks-per-node=1 --cpus-per-task=12 --mem=100GB chameleon_dtesting -o potrf -n "$size" -b 500 --custom="$sbc_file" --mtxfmt=1 2>&1 | tee "$log_file"
+
+    # Process the log file to calculate the total communication
+    temp=$(awk '/starpu_comm_stats_memnode/ {s+=$5} END {print s/1024.0}' "$log_file")
+    total="Data for matrix size: $size\ncommunication: $temp"
+
+    # Output the total to both the terminal and a separate file
+    echo -e "$total" | tee "$data_file"
+
+    # Process the log file for the gflops and time
+    awk -F';' '/Id;Function;threads;gpus;P;Q;mtxfmt;nb;uplo;n;lda;seedA;tsub;time;gflops/{getline; printf "time: %s\ngflops: %s\n", $14, $15}' "$log_file" | tee -a "$data_file"
+
+    echo "Completed for matrix size: $size"
+done
